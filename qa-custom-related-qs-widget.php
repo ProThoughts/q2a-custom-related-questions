@@ -1,8 +1,9 @@
 <?php
 
+require_once CUSTOME_RELATED_DIR.'/related-qs-utils.php';
+
 class qa_custom_related_qs
 {
-    const CACHE_EXPIRES = 60 * 60;
     
     public function allow_template($template)
     {
@@ -16,7 +17,6 @@ class qa_custom_related_qs
 
     public function output_widget($region, $place, $themeobject, $template, $request, $qa_content)
     {
-        require_once QA_INCLUDE_DIR.'db/selects.php';
 
         if (!isset($qa_content['q_view']['raw']['type']) || $qa_content['q_view']['raw']['type'] != 'Q') // question might not be visible, etc...
             return;
@@ -27,149 +27,64 @@ class qa_custom_related_qs
         $cookieid = qa_cookie_get();
 
         // 関連する質問
-        $rquestions = $this->get_related_questions($userid, $questionid);
+        $rquestions = related_qs_utils::get_related_questions($userid, $questionid);
         $titlehtml = qa_lang_html(count($rquestions) ? 'main/related_qs_title' : 'main/no_related_qs_title');
-        $this->output_questions_widget($region, $place, $themeobject, $userid, $cookieid, $titlehtml, $rquestions, 'related-q-list');
+        if ($region === 'side') {
+            $this->output_questions_widget_side($themeobject, $titlehtml, $rquestions, 'related-q-list');
+        } else {
+            $this->output_questions_widget_main($themeobject, $titlehtml, 'related-q-list');
+        }
 
         // おなじ季節の質問
-        $squestions = $this->get_seasonal_questions($userid);
-        $titlehtml = qa_lang_html('custom_related_qs/title_seasons');
-        $this->output_questions_widget($region, $place, $themeobject, $userid, $cookieid, $titlehtml, $squestions, 'season-q-list');
-    }
-
-    function get_related_questions($userid, $questionid)
-    {
-        global $qa_cache;
-        $key = 'q-related-'.$questionid;
-        if($qa_cache->has($key)) {
-            $questions = $qa_cache->get($key);
-        } else {
-            $selectspec = qa_db_related_qs_selectspec($userid, $questionid);
-            $minscore = qa_match_to_min_score(qa_opt('match_related_qs'));
-            $minacount = 2;
-            $listcount = 10;
-            $selectspec['source'] .= ' WHERE ^posts.acount >= # AND y.score >= # LIMIT #';
-            $selectspec['arguments'][] = $minacount;
-            $selectspec['arguments'][] = $minscore;
-            $selectspec['arguments'][] = $listcount;
-            $questions = qa_db_single_select($selectspec);
-            $qa_cache->set($key, $questions, self::CACHE_EXPIRES);
-        }
-        return $questions;
-        // return array_slice($questions, 0, 5);
+        // if ($region === 'side') {
+        //     $squestions = related_qs_utils::get_seasonal_questions($userid);
+        //     $titlehtml = qa_lang_html('custom_related_qs/title_seasons');
+        //     $this->output_questions_widget_side($themeobject, $titlehtml, $squestions, 'season-q-list');
+        // } else {
+        //     $this->output_questions_widget_main($themeobject, 'season-q-list');
+        // }
     }
 
 
-    function get_seasonal_questions($userid = null)
+    function output_questions_widget_side($themeobject, $titlehtml, $questions, $class, $sendEvent = false)
     {
-        $month = date("m");
-        $day= date("j");
-        $day = floor($day/10);
-        if($day == 3) {
-            $day  = 2;
-        }
-        $date = '%-' . $month . '-' . $day . '%';
+        $themeobject->output(
+            '<div class="qa-related-qs">',
+            '<h2 style="margin-top:0; padding-top:0;">',
+            $titlehtml,
+            '</h2>'
+        );
 
-        // $userid = '1';
-        $selectspec=qa_db_posts_basic_selectspec($userid);
-        $selectspec['source'] .=" WHERE type='Q'";
-        $selectspec['source'] .= " AND ^posts.created like '" . $date . "' ORDER BY RAND() LIMIT 10";
-        $questions=qa_db_single_select($selectspec);
-        return $questions;
-    }
-
-    function get_recent_questions($userid = null)
-    {
-        require_once QA_INCLUDE_DIR.'db/selects.php';
-
-        $selectsort='created';
-        $start=qa_get_start();
-
-        $selectspec = qa_db_qs_selectspec($userid, $selectsort, $start, null, null, false, false, 5);
-
-        $questions = qa_db_single_select($selectspec);
-        return $questions;
-    }
-
-    function output_questions_widget($region, $place, $themeobject, $userid, $cookieid, $titlehtml, $questions, $class, $sendEvent = false)
-    {
-        if ($region == 'side') {
-            $themeobject->output(
-                '<div class="qa-related-qs">',
-                '<h2 style="margin-top:0; padding-top:0;">',
-                $titlehtml,
-                '</h2>'
-            );
-
-            $themeobject->output('<ul class="qa-related-q-list">');
-            $idx = 1;
-            foreach ($questions as $question) {
-                if ($sendEvent) {
-                    $onclick = 'onclick="optSendEvent('.$idx.');"';
-                } else {
-                    $onclick = '';
-                }
-                $themeobject->output(
-                        '<li class="qa-related-q-item">' .
-                        '<a href="' . qa_q_path_html($question['postid'], $question['title']) . '" '.$onclick.'>' .
-                        qa_html($question['title']) .
-                        '</a>' .
-                        '</li>'
-                );
-                $idx++;
+        $themeobject->output('<ul class="qa-related-q-list">');
+        $idx = 1;
+        foreach ($questions as $question) {
+            if ($sendEvent) {
+                $onclick = 'onclick="optSendEvent('.$idx.');"';
+            } else {
+                $onclick = '';
             }
-
             $themeobject->output(
-                '</ul>',
-                '</div>'
+                    '<li class="qa-related-q-item">' .
+                    '<a href="' . qa_q_path_html($question['postid'], $question['title']) . '" '.$onclick.'>' .
+                    qa_html($question['title']) .
+                    '</a>' .
+                    '</li>'
             );
-        } else {
-            $themeobject->output('<div class="' . $class . '">');
-            $themeobject->output(
-                '<h2>',
-                $titlehtml,
-                '</h2>'
-            );
-
-            $q_list = array(
-                'form' => array(
-                    'tags' => 'method="post" action="' . qa_self_html() . '"',
-                    'hidden' => array(
-                        'code' => qa_get_form_security_code('vote'),
-                    ),
-                ),
-                'qs' => array(),
-            );
-
-            $defaults = qa_post_html_defaults('Q');
-            $usershtml = qa_userids_handles_html($questions);
-            $idx = 1;
-            foreach ($questions as $question) {
-                if ($sendEvent) {
-                    $onclick = '" onclick="optSendEvent('.$idx.');';
-                } else {
-                    $onclick = '';
-                }
-                $fields = qa_post_html_fields($question, $userid, $cookieid, $usershtml, null, qa_post_html_options($question, $defaults));
-                $fields['url'] .= $onclick;
-                $q_list['qs'][] = $fields;
-                $idx++;
-            }
-            $themeobject->q_list_and_form($q_list);
-            $themeobject->output('</div>');
+            $idx++;
         }
+
+        $themeobject->output(
+            '</ul>',
+            '</div>'
+        );
     }
 
-    function output_pagelinks($themeobject)
+    function output_questions_widget_main($themeobject, $titlehtml, $class)
     {
-        $start = qa_get_start();
-        $page_links = qa_html_page_links(qa_request(), $start, 5, qa_opt('cache_qcount'), qa_opt('pages_prev_next'), array());
-        $themeobject->output('<div class="qa-page-links">');
-
-        $themeobject->page_links_label($page_links['label']);
-        $themeobject->page_links_list($page_links['items']);
-        $themeobject->page_links_clear();
-
+        $themeobject->output('<div class="' . $class . '" id="'.$class.'">');
+        $themeobject->output('<h2 style="margin-top:0; padding-top:0;">'.$titlehtml.'</h2>');
+        $themeobject->output('<div class="ias-spinner" style="text-align:center;"><span class="mdl-spinner mdl-js-spinner is-active" style="height:20px;width:20px;"></span></div>');
         $themeobject->output('</div>');
     }
+
 }

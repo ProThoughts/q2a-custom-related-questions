@@ -8,18 +8,36 @@ class qa_html_theme_layer extends qa_html_theme_base
 {
     private $pluginurl = '';
 
-    function qa_html_theme_layer($template, $content, $rooturl, $request)
+    function __construct($template, $content, $rooturl, $request)
     {
         qa_html_theme_base::qa_html_theme_base($template, $content, $rooturl, $request);
         $this->pluginurl = qa_opt('site_url').'qa-plugin/q2a-custom-related-questions/';
     }
 
-    function head_script()
+    function body_footer()
     {
-        qa_html_theme_base::head_script();
+        qa_html_theme_base::body_footer();
+        if($this->template === 'question' && !$this->is_edit()) {
+            $postid = @$this->content['q_view']['raw']['postid'];
+            $script = <<<EOS
+<script>
+var related_qs_postid = '{$postid}';
+</script>
+EOS;
+            $this->output($script);
+            $src = $this->pluginurl.'js/related-qs.js';
+            $this->output('<script src="'.$src.'"></script>');
+        }
     }
-    function head_css()
+
+    function is_edit()
     {
-        qa_html_theme_base::head_css();
+        $content = $this->content;
+        if(strpos(qa_get_state(),'edit') !== false) {
+            return true;
+        } else {
+            return false;
+        }
+
     }
 }
